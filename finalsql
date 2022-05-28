@@ -1,0 +1,132 @@
+/* Note: The data was obtained from https://ourworldindata.org/coronavirus on May 2, 2022 and was originally 1 Excel file.
+It was then split into 2 files in order to showcase joins,
+*/
+ 
+-- Inspecting the data
+ 
+SELECT *
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022` dea
+JOIN `directed-reef-321809.covid_case_study.covid_vaccinations05022022` vac
+ON dea.location = vac.location
+  AND dea.date = vac.date
+ 
+ 
+ 
+/* I noticed that the continent column was blank and the location column had a continent.
+So looking a bit closer... */
+ 
+SELECT DISTINCT(dea.location)
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022` dea
+JOIN `directed-reef-321809.covid_case_study.covid_vaccinations05022022` vac
+ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NULL
+ 
+ 
+ 
+-- Comparing this to the location column where the continent column is not null
+ 
+SELECT DISTINCT(dea.location)
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022` dea
+JOIN `directed-reef-321809.covid_case_study.covid_vaccinations05022022` vac
+ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NOT NULL
+ 
+/* The dataset already has pre-aggregated data by continent, income, and even the world as a whole,
+and they're categorized under the location column.
+*/
+ 
+ 
+ 
+/* Here, I selected data I started to analyze and visualize.
+ 
+I'm keeping both continent and location to manipulate in tableau */
+ 
+SELECT dea.continent,
+       dea.location,
+       dea.date,
+       dea.population,
+       dea.new_cases,
+       dea.new_deaths,
+       vac.new_vaccinations,
+       vac.people_fully_vaccinated
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022` dea
+JOIN `directed-reef-321809.covid_case_study.covid_vaccinations05022022` vac
+ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NOT NULL
+ORDER BY dea.location, dea.date
+ 
+ 
+ 
+/* Aggregated regional data but ended up barely using this for visualizing.
+ 
+Used window functions to see if there were any notable differences between SUM(new cases/deaths) and MAX(total cases/deaths) 
+without grouping the variables and to be able to showcase them in my SQL code, too */
+ 
+WITH regional_data AS (
+SELECT location,
+       population,
+       date,
+       new_cases,
+       total_cases,
+       new_deaths,
+       total_deaths,
+       new_cases_smoothed,
+       new_deaths_smoothed
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022`
+WHERE continent IS NULL and location IN ('Africa', 'Asia', 'Europe', 'North America', 'Oceania', 'South America'))
+ 
+SELECT *,
+       SUM(new_cases) OVER (PARTITION BY location ORDER BY date) AS continental_case_count,
+       SUM(new_deaths) OVER (PARTITION BY location ORDER BY date) AS continental_death_count
+FROM regional_data
+ORDER BY date DESC, location
+ 
+ 
+ 
+/* Global data using the pre-aggregated data.
+ 
+I also compute for the global fully vaccinated rate. Since the first variable is a total(sum), it acts as a rolling rate */
+ 
+SELECT dea.location,
+       dea.date,
+       dea.population,
+       dea.new_cases,
+       dea.total_cases,
+       dea.new_deaths,
+       dea.total_deaths,
+       vac.new_vaccinations,
+       vac.people_fully_vaccinated,
+       vac.total_boosters,
+       ROUND(vac.people_fully_vaccinated/dea.population*100, 2) AS fully_vaccinated_rate
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022` dea
+JOIN `directed-reef-321809.covid_case_study.covid_vaccinations05022022` vac
+ON dea.location = vac.location
+  AND dea.date = vac.date
+WHERE dea.continent IS NULL AND dea.location = 'World'
+ORDER BY dea.location, dea.date
+ 
+ 
+ 
+/* Looking at the number of regular and ICU hospital patients to check the severity of the Omicron variant
+relative to other variants (variant dates visualized on tableau). Only ended up using sum_icu.
+ 
+Used the CAST() function to convert weekly admissions data into integers as they were stored as strings */
+ 
+SELECT continent,
+       date,
+       SUM(icu_patients) AS sum_icu,
+       SUM(hosp_patients) AS sum_hosp,
+       SUM(CAST(weekly_icu_admissions AS int64)) AS weekly_icu,
+       SUM(CAST(weekly_hosp_admissions AS int64)) AS weekly_hosp
+FROM `directed-reef-321809.covid_case_study.covid_deaths05022022`
+WHERE continent IS NOT NULL
+GROUP BY continent, date
+ORDER BY continent, date DESC
+ 
+ 
+-- Tableau: https://public.tableau.com/app/profile/ajcdl#!/
+ 
+
